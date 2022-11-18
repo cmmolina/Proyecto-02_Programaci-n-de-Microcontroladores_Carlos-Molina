@@ -2654,8 +2654,11 @@ extern __bank0 __bit __timeout;
 
 
 int modo;
-int ADC_Voltaje;
-int equivalent;
+unsigned int ADC_Voltaje1;
+unsigned int ADC_Voltaje2;
+unsigned int ADC_Voltaje3;
+unsigned int ADC_Voltaje4;
+char option_selected;
 
 
 
@@ -2664,23 +2667,37 @@ void setup(void);
 void setupPWM(void);
 void setupADC(void);
 void incModo(void);
-void ADC_to_PWM(int ADCVoltage);
+void delay(unsigned int micro);
+void print(unsigned char *palabra);
+unsigned int map(uint8_t value, int valorin, int inputmax, int outmin, int outmax);
 
 
 
 
 void __attribute__((picinterrupt(("")))) isr (void){
-    INTCONbits.T0IF = 0;
 
 
 
-
+    if (PIR1bits.TXIF){
+        PIR1bits.TXIF = 0;
+    }
 
     if (PIR1bits.ADIF){
 
         PIR1bits.ADIF=0;
     }
-# 75 "main.c"
+
+    if (INTCONbits.T0IF){
+        INTCONbits.T0IF = 0;
+        TMR0 = 100;
+
+        PORTAbits.RA7 = 1;
+        delay(ADC_Voltaje3);
+        PORTAbits.RA7 = 0;
+        PORTAbits.RA6 = 1;
+        delay(ADC_Voltaje4);
+        PORTAbits.RA6 = 0;
+    }
 }
 
 
@@ -2708,15 +2725,19 @@ void main(void) {
             case (1):
 
 
+                PORTDbits.RD0 = 0;
+                PORTDbits.RD1 = 0;
+                PORTDbits.RD2 = 1;
+
+
                 ADCON0bits.CHS = 0b0000;
                 _delay((unsigned long)((100)*(500000/4000000.0)));
                 ADCON0bits.GO = 1;
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje = ADRESH;
-                ADC_to_PWM(ADC_Voltaje);
-                CCPR1L = equivalent;
+                ADC_Voltaje1 = map(ADRESH, 0, 255, 5, 17);
+                CCPR1L = ADC_Voltaje1;
                 _delay((unsigned long)((100)*(500000/4000000.0)));
 
 
@@ -2726,9 +2747,8 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje = ADRESH;
-                ADC_to_PWM(ADC_Voltaje);
-                CCPR2L = equivalent;
+                ADC_Voltaje2 = map(ADRESH, 0, 255, 5, 17);
+                CCPR2L = ADC_Voltaje2;
                 _delay((unsigned long)((100)*(500000/4000000.0)));
 
 
@@ -2738,7 +2758,7 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                PORTD = ADRESH;
+                ADC_Voltaje3 = map(ADRESH, 0, 255, 5, 17);
                 _delay((unsigned long)((100)*(500000/4000000.0)));
 
 
@@ -2748,29 +2768,34 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-
+                ADC_Voltaje4 = map(ADRESH, 0, 255, 5, 17);
                 _delay((unsigned long)((100)*(500000/4000000.0)));
 
                 break;
+
             case (2):
-                ;
+
+
+                PORTDbits.RD0 = 1;
+                PORTDbits.RD1 = 0;
+                PORTDbits.RD2 = 0;
+
+
+
                 break;
             case(3):
-                ;
+
+
+                PORTDbits.RD0 = 0;
+                PORTDbits.RD1 = 1;
+                PORTDbits.RD2 = 0;
+# 212 "main.c"
                 break;
         }
 
-
     }
 }
-
-
-
-
-void ADC_to_PWM(int voltaje){
-    equivalent = (unsigned short) (7+( (float)(9)/(255) ) * (voltaje-0));
-}
-
+# 226 "main.c"
 void setup(void){
 
 
@@ -2789,7 +2814,7 @@ void setup(void){
     PORTC = 0b00000000;
     PORTD = 0b00000000;
     PORTE = 0b00000000;
-# 192 "main.c"
+# 253 "main.c"
     OSCCONbits.IRCF = 0b011;
     OSCCONbits.SCS = 1;
 
@@ -2802,13 +2827,13 @@ void setup(void){
     INTCONbits.TMR0IE = 1;
 
     PIR1bits.ADIF = 0;
-    INTCONbits.T0IF = 0;
 
 
     OPTION_REGbits.T0CS = 0;
     OPTION_REGbits.PSA = 0;
     OPTION_REGbits.PS = 0b011;
-    TMR0 = 240;
+    TMR0 = 100;
+    INTCONbits.T0IF = 0;
 }
 
 void setupPWM(void){
@@ -2848,6 +2873,20 @@ void setupPWM(void){
     TRISCbits.TRISC1=0;
 }
 
+void initUART(void){
+
+    SPBRG = 12;
+    TXSTAbits.SYNC = 0;
+    RCSTAbits.SPEN = 1;
+    TXSTAbits.TXEN = 1;
+
+
+    PIR1bits.TXIF = 0;
+
+    RCSTAbits.CREN = 1;
+
+}
+
 void setupADC(void){
 
     ADCON0bits.ADCS = 0b01;
@@ -2875,5 +2914,26 @@ void incModo(void){
     }
     else{
         modo = 1;
+    }
+}
+
+void delay(unsigned int micro){
+    while (micro > 0){
+        _delay((unsigned long)((50)*(500000/4000000.0)));
+        micro--;
+    }
+}
+
+unsigned int map(uint8_t value, int inputmin,
+                  int inputmax, int outmin, int outmax){
+    return ((value - inputmin)*(outmax-outmin)) / ((inputmax-inputmin)+outmin);
+}
+
+void print(unsigned char *palabra){
+
+    while (*palabra != '\0'){
+        while (TXIF != 1);
+        TXREG = *palabra;
+        *palabra++;
     }
 }
