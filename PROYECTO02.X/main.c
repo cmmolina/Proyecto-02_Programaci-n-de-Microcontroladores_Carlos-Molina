@@ -41,6 +41,12 @@ unsigned int ADC_Voltaje2;
 unsigned int ADC_Voltaje3; 
 unsigned int ADC_Voltaje4; 
 char option_selected;
+unsigned int address = 0; 
+unsigned int serv1;
+unsigned int serv2;
+unsigned int serv3;
+unsigned int serv4;
+
 
 //******************************************************************************
 // Prototipos de Funciones
@@ -48,10 +54,14 @@ char option_selected;
 void setup(void);
 void setupPWM(void);
 void setupADC(void);
+void initUART(void);
 void incModo(void);
 void delay(unsigned int micro);
 void print(unsigned char *palabra);
 unsigned int map(uint8_t value, int valorin, int inputmax, int outmin, int outmax);
+uint8_t read_EEPROM(uint8_t address);
+void write_EEPROM(uint8_t address, uint8_t data);
+
 
 //******************************************************************************
 // Interrupción
@@ -80,6 +90,38 @@ void __interrupt() isr (void){
         delay(ADC_Voltaje4); // delay (tiempo en alto del pulso)
         PORTAbits.RA6 = 0; //apagar
     }
+    
+    if (INTCONbits.RBIF){
+        if (PORTBbits.RB0 == 0){
+            address = address + 4;
+        }
+        
+        else if (PORTBbits.RB1 == 0)
+            address = address - 4;
+        
+        else if (PORTBbits.RB2 == 0){
+            write_EEPROM(address, ADC_Voltaje1);
+            write_EEPROM(address + 1, ADC_Voltaje2);
+            write_EEPROM(address + 2, ADC_Voltaje3);
+            write_EEPROM(address + 3, ADC_Voltaje4);
+        }
+        
+        else if (modo == 2){
+            if (PORTBbits.RB3 == 0){
+                ADC_Voltaje1 = read_EEPROM(address);
+                ADC_Voltaje2 = read_EEPROM(address+1);
+                ADC_Voltaje3 = read_EEPROM(address+2);
+                ADC_Voltaje4 = read_EEPROM(address+3);
+            }
+            else if (PORTBbits.RB0 == 0){
+                address = address + 4;
+            }
+
+            else if (PORTBbits.RB1 == 0)
+                address = address - 4;
+        }
+        INTCONbits.RBIF = 0;
+    }
 }
 
 //******************************************************************************
@@ -89,6 +131,7 @@ void main(void) {
     setup();
     setupADC();
     setupPWM();
+    initUART();
     modo = 1; 
 
     //Loop Principal
@@ -162,7 +205,8 @@ void main(void) {
                 PORTDbits.RD1 = 0; 
                 PORTDbits.RD2 = 0; 
                 
-                
+                CCPR1L = ADC_Voltaje1; 
+                CCPR2L = ADC_Voltaje2; 
                 
                 break; 
             case(3): //Modo UART (Movimiento controlado por medio de Adafruit)
@@ -172,8 +216,9 @@ void main(void) {
                 PORTDbits.RD1 = 1; 
                 PORTDbits.RD2 = 0;
                 
-                /*print("\r¿Cuál servo desea mover?  \r");
-                print("1. Brazo Izquierdo, 2. Brazo Derecho, 3. Pivote, 4. Garra");
+                /*
+                print("\r¿Cuál servo desea mover?  \r");
+                //print("1. Brazo Izquierdo, 2. Brazo Derecho, 3. Pivote, 4. Garra");
                 
                 while(PIR1bits.RCIF == 0){
                      ;
@@ -181,7 +226,7 @@ void main(void) {
                 
                 option_selected = RCREG;
                 
-                if (option_selected == '1'){
+                /*if (option_selected == '1'){
                     print("Seleccione el ángulo de rotación");
                     while(PIR1bits.RCIF == 0){
                         ;
@@ -202,7 +247,7 @@ void main(void) {
                     __delay_us(100);
                     }         
                 
-                /*ADC_Voltaje3 = map(RCREG, 1, 4, 5, 17);
+                ADC_Voltaje3 = map(RCREG, 1, 4, 5, 17);
                 __delay_us(100);
                 
                 ADC_Voltaje4 = map(RCREG, 1, 4, 5, 17);
@@ -223,6 +268,34 @@ void main(void) {
     equivalent = (unsigned short) (7+( (float)(9)/(255) ) * (voltaje-0));
 }*/
 
+void write_EEPROM(uint8_t address, uint8_t data){
+    uint8_t gieStatus;
+    while (WR);
+    
+    EEADR = address;
+    EEDAT = data;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.WREN = 1;
+    gieStatus = GIE;
+    INTCONbits.GIE = 0;
+    EECON2 = 0x55;
+    EECON2 = 0xAA;
+    EECON1bits.WR = 1;
+    EECON1bits. WREN = 0;
+    
+    INTCONbits.GIE = gieStatus;
+}
+
+uint8_t read_EEPROM (uint8_t address){
+    while (WR||RD);
+    
+    EEADR = address;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.RD = 1;
+    return EEDAT;
+}
+
+
 void setup(void){
     //Configuración de I/O 
     
@@ -231,7 +304,7 @@ void setup(void){
 
             //76543210
     TRISA = 0b00001111;            // RA0, RA1, RA2, RA3 como inputs
-    TRISB = 0b00000000; 
+    TRISB = 0b00001111;            // RB0, RB1, RB2, RB3, RB4 como inputs
     TRISC = 0b00000110; 
     TRISD = 0b00000000; 
     TRISE = 0b00000100;             //RE2 como input
@@ -249,10 +322,17 @@ void setup(void){
     INTCONbits.RBIF = 0;            // Flag del Puerto B en 0
     */
     
+    IOCB = 0b00111111;    // RB con Interrupción
+    OPTION_REGbits.nRBPU = 0;
+    
+    
     //Configuración del Oscilador
     OSCCONbits.IRCF = 0b011;        // 500KHz
     OSCCONbits.SCS = 1;             // Oscilador Interno
     
+    
+    INTCONbits.RBIE = 1;            // Se habilitan las interrupciones del Puerto B
+
     
     //Configuración de las Interrupciones
     INTCONbits.GIE = 1;             
@@ -262,6 +342,8 @@ void setup(void){
     INTCONbits.TMR0IE = 1;          // Se habilitan las interrupciones del TMR0    
     
     PIR1bits.ADIF = 0;              // Flag de ADC en 0
+    INTCONbits.RBIF = 0;            // Flag de Interrupciones del Puerto B en 0
+
     
     //Configuración del TMR0
     OPTION_REGbits.T0CS = 0;        // Fosc/4
@@ -308,20 +390,6 @@ void setupPWM(void){
     TRISCbits.TRISC1=0;             //Habilitamos la salida del PWM1.
 }
 
-void initUART(void){
-    
-    SPBRG = 12;                     // Baud rate (8MHz/9600)
-    TXSTAbits.SYNC = 0;             // Asíncrono 
-    RCSTAbits.SPEN = 1;             // Se habilita el módulo UART
-    TXSTAbits.TXEN = 1;             /* Transmisión habilitada; TXIF se enciende
-                                     automaticamente.*/
-    
-    PIR1bits.TXIF = 0;              // Apagamos la bandera de transmisión
-    
-    RCSTAbits.CREN = 1;             // Habilitamos la recepción
-    
-}
-
 void setupADC(void){
     //Módulo de ADC
     ADCON0bits.ADCS = 0b01;         // Fosc/8
@@ -341,6 +409,20 @@ void setupADC(void){
     
     //Delay (Ejemplo)
     __delay_us(100);
+}
+
+void initUART(void){
+    SPBRG = 14;                     // Baud rate (8MHz/9600)
+    TXSTAbits.SYNC = 0;             // Asíncrono 
+    RCSTAbits.SPEN = 1;             // Se habilita el módulo UART
+    TXSTAbits.TXEN = 1;             /* Transmisión habilitada; TXIF se enciende
+                                     automaticamente.*/
+    
+    PIR1bits.TXIF = 0;              // Apagamos la bandera de transmisión
+    
+    RCSTAbits.CREN = 1;             // Habilitamos la recepción
+    
+    BAUDCTLbits.BRG16 = 1;
 }
 
 void incModo(void){

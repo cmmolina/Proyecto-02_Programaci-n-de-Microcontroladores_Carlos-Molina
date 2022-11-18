@@ -2659,6 +2659,12 @@ unsigned int ADC_Voltaje2;
 unsigned int ADC_Voltaje3;
 unsigned int ADC_Voltaje4;
 char option_selected;
+unsigned int address = 0;
+unsigned int serv1;
+unsigned int serv2;
+unsigned int serv3;
+unsigned int serv4;
+
 
 
 
@@ -2666,10 +2672,14 @@ char option_selected;
 void setup(void);
 void setupPWM(void);
 void setupADC(void);
+void initUART(void);
 void incModo(void);
 void delay(unsigned int micro);
 void print(unsigned char *palabra);
 unsigned int map(uint8_t value, int valorin, int inputmax, int outmin, int outmax);
+uint8_t read_EEPROM(uint8_t address);
+void write_EEPROM(uint8_t address, uint8_t data);
+
 
 
 
@@ -2698,6 +2708,38 @@ void __attribute__((picinterrupt(("")))) isr (void){
         delay(ADC_Voltaje4);
         PORTAbits.RA6 = 0;
     }
+
+     if (INTCONbits.RBIF){
+        if (PORTBbits.RB0 == 0){
+            address = address + 4;
+        }
+
+        else if (PORTBbits.RB1 == 0)
+            address = address - 4;
+
+        else if (PORTBbits.RB2 == 0){
+            write_EEPROM(address, ADC_Voltaje1);
+            write_EEPROM(address + 1, ADC_Voltaje2);
+            write_EEPROM(address + 2, ADC_Voltaje3);
+            write_EEPROM(address + 3, ADC_Voltaje4);
+        }
+
+        else if (modo == 2){
+            if (PORTBbits.RB3 == 0){
+                ADC_Voltaje1 = read_EEPROM(address);
+                ADC_Voltaje2 = read_EEPROM(address+1);
+                ADC_Voltaje3 = read_EEPROM(address+2);
+                ADC_Voltaje4 = read_EEPROM(address+3);
+            }
+            else if (PORTBbits.RB0 == 0){
+                address = address + 4;
+            }
+
+            else if (PORTBbits.RB1 == 0)
+                address = address - 4;
+        }
+        INTCONbits.RBIF = 0;
+    }
 }
 
 
@@ -2707,6 +2749,7 @@ void main(void) {
     setup();
     setupADC();
     setupPWM();
+    initUART();
     modo = 1;
 
 
@@ -2780,7 +2823,8 @@ void main(void) {
                 PORTDbits.RD1 = 0;
                 PORTDbits.RD2 = 0;
 
-
+                CCPR1L = ADC_Voltaje1;
+                CCPR2L = ADC_Voltaje2;
 
                 break;
             case(3):
@@ -2789,13 +2833,41 @@ void main(void) {
                 PORTDbits.RD0 = 0;
                 PORTDbits.RD1 = 1;
                 PORTDbits.RD2 = 0;
-# 212 "main.c"
+# 257 "main.c"
                 break;
         }
 
     }
 }
-# 226 "main.c"
+# 271 "main.c"
+void write_EEPROM(uint8_t address, uint8_t data){
+    uint8_t gieStatus;
+    while (WR);
+
+    EEADR = address;
+    EEDAT = data;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.WREN = 1;
+    gieStatus = GIE;
+    INTCONbits.GIE = 0;
+    EECON2 = 0x55;
+    EECON2 = 0xAA;
+    EECON1bits.WR = 1;
+    EECON1bits. WREN = 0;
+
+    INTCONbits.GIE = gieStatus;
+}
+
+uint8_t read_EEPROM (uint8_t address){
+    while (WR||RD);
+
+    EEADR = address;
+    EECON1bits.EEPGD = 0;
+    EECON1bits.RD = 1;
+    return EEDAT;
+}
+
+
 void setup(void){
 
 
@@ -2804,7 +2876,7 @@ void setup(void){
 
 
     TRISA = 0b00001111;
-    TRISB = 0b00000000;
+    TRISB = 0b00001111;
     TRISC = 0b00000110;
     TRISD = 0b00000000;
     TRISE = 0b00000100;
@@ -2814,9 +2886,17 @@ void setup(void){
     PORTC = 0b00000000;
     PORTD = 0b00000000;
     PORTE = 0b00000000;
-# 253 "main.c"
+# 325 "main.c"
+    IOCB = 0b00111111;
+    OPTION_REGbits.nRBPU = 0;
+
+
+
     OSCCONbits.IRCF = 0b011;
     OSCCONbits.SCS = 1;
+
+
+    INTCONbits.RBIE = 1;
 
 
 
@@ -2827,6 +2907,8 @@ void setup(void){
     INTCONbits.TMR0IE = 1;
 
     PIR1bits.ADIF = 0;
+    INTCONbits.RBIF = 0;
+
 
 
     OPTION_REGbits.T0CS = 0;
@@ -2873,20 +2955,6 @@ void setupPWM(void){
     TRISCbits.TRISC1=0;
 }
 
-void initUART(void){
-
-    SPBRG = 12;
-    TXSTAbits.SYNC = 0;
-    RCSTAbits.SPEN = 1;
-    TXSTAbits.TXEN = 1;
-
-
-    PIR1bits.TXIF = 0;
-
-    RCSTAbits.CREN = 1;
-
-}
-
 void setupADC(void){
 
     ADCON0bits.ADCS = 0b01;
@@ -2906,6 +2974,20 @@ void setupADC(void){
 
 
     _delay((unsigned long)((100)*(500000/4000000.0)));
+}
+
+void initUART(void){
+    SPBRG = 14;
+    TXSTAbits.SYNC = 0;
+    RCSTAbits.SPEN = 1;
+    TXSTAbits.TXEN = 1;
+
+
+    PIR1bits.TXIF = 0;
+
+    RCSTAbits.CREN = 1;
+
+    BAUDCTLbits.BRG16 = 1;
 }
 
 void incModo(void){
