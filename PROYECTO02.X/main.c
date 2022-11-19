@@ -41,12 +41,7 @@ unsigned int ADC_Voltaje2;
 unsigned int ADC_Voltaje3; 
 unsigned int ADC_Voltaje4; 
 char option_selected;
-unsigned int address = 0; 
-unsigned int serv1;
-unsigned int serv2;
-unsigned int serv3;
-unsigned int serv4;
-
+unsigned int address; 
 
 //******************************************************************************
 // Prototipos de Funciones
@@ -56,70 +51,76 @@ void setupPWM(void);
 void setupADC(void);
 void initUART(void);
 void incModo(void);
-void delay(unsigned int micro);
+void delay(unsigned int sec);
 void print(unsigned char *palabra);
-unsigned int map(uint8_t value, int valorin, int inputmax, int outmin, int outmax);
+unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax);
 uint8_t read_EEPROM(uint8_t address);
 void write_EEPROM(uint8_t address, uint8_t data);
-
 
 //******************************************************************************
 // Interrupción
 //******************************************************************************
 void __interrupt() isr (void){    
-    /*if (INTCONbits.RBIF){ //Interrupción del Puerto B
-        INTCONbits.RBIF = 0; 
-    }*/
+    
     if (PIR1bits.TXIF){
         PIR1bits.TXIF = 0;
     }
     
-    if (PIR1bits.ADIF){   //Interrupción del ADC cuando la lectura termina
-        //PORTBbits.RB7=1; 
+    if (PIR1bits.RCIF){
+        PIR1bits.RCIF = 0;
+    }
+    
+    //Interrupción del ADC cuando la lectura termina
+    if (PIR1bits.ADIF){ 
         PIR1bits.ADIF=0; 
     }
     
-    if (INTCONbits.T0IF){ //Interrupción del TMR0 (PWM Manual)
-        INTCONbits.T0IF = 0; // limpiar bandera
-        TMR0 = tmr0_value; //asignar valor al timer0
+    //Interrupción del TMR0 (PWM Manual)
+    if (INTCONbits.T0IF){
         
-        PORTAbits.RA7 = 1; //encender led
-        delay(ADC_Voltaje3); // delay (tiempo en alto del pulso)
-        PORTAbits.RA7 = 0; //apagar
-        PORTAbits.RA6 = 1; //encender led
-        delay(ADC_Voltaje4); // delay (tiempo en alto del pulso)
-        PORTAbits.RA6 = 0; //apagar
+        TMR0 = tmr0_value;          // Cargamos 20ms de nuevo al TMR0
+        
+        PORTAbits.RA7 = 1; 
+        delay(ADC_Voltaje3); 
+        PORTAbits.RA7 = 0;
+        PORTAbits.RA6 = 1; 
+        delay(ADC_Voltaje4); 
+        PORTAbits.RA6 = 0;
+        
+        INTCONbits.T0IF = 0;
     }
     
-    if (INTCONbits.RBIF){
+    //Interrupción del Puerto B 
+    if (INTCONbits.RBIF){ 
         if (PORTBbits.RB0 == 0){
-            address = address + 4;
+            address = address + 4;  // Modificamos localidad a guardar/leer para arriba
         }
         
         else if (PORTBbits.RB1 == 0)
-            address = address - 4;
+            address = address - 4;  // Modificamos localidad a guardar/leer para abajo
         
-        else if (PORTBbits.RB2 == 0){
-            write_EEPROM(address, ADC_Voltaje1);
+        else if (PORTBbits.RB2 == 0){ 
+            
+            //Guardamos los valores de la posición actual del brazo
+            write_EEPROM(address, ADC_Voltaje1);  
             write_EEPROM(address + 1, ADC_Voltaje2);
             write_EEPROM(address + 2, ADC_Voltaje3);
             write_EEPROM(address + 3, ADC_Voltaje4);
         }
         
-        else if (modo == 2){
-            if (PORTBbits.RB3 == 0){
+        else if (PORTBbits.RB3 == 0){
+            if (modo == 2){
+                //Leemos los valores guardados en la localidad que va de acuerdo al contador
                 ADC_Voltaje1 = read_EEPROM(address);
                 ADC_Voltaje2 = read_EEPROM(address+1);
                 ADC_Voltaje3 = read_EEPROM(address+2);
                 ADC_Voltaje4 = read_EEPROM(address+3);
             }
-            else if (PORTBbits.RB0 == 0){
-                address = address + 4;
+            else {
+                ;
             }
-
-            else if (PORTBbits.RB1 == 0)
-                address = address - 4;
         }
+        
         INTCONbits.RBIF = 0;
     }
 }
@@ -133,6 +134,7 @@ void main(void) {
     setupPWM();
     initUART();
     modo = 1; 
+    address = 0;
 
     //Loop Principal
     while(1){
@@ -161,8 +163,8 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje1 = map(ADRESH, 0, 255, 5, 17);
-                CCPR1L = ADC_Voltaje1; 
+                ADC_Voltaje1 = map(ADRESH, 0, 255, 5, 17); //Map de POT1
+                CCPR1L = ADC_Voltaje1;        //Se manda valor de pulso a PWM
                 __delay_us(100);
                 
                 //Lectura Canal AN1
@@ -172,8 +174,8 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje2 = map(ADRESH, 0, 255, 5, 17);
-                CCPR2L = ADC_Voltaje2; 
+                ADC_Voltaje2 = map(ADRESH, 0, 255, 5, 17); //Map de POT2
+                CCPR2L = ADC_Voltaje2;        //Se manda valor de pulso a PWM
                 __delay_us(100);
                 
                 //Lectura Canal AN2
@@ -183,7 +185,7 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje3 = map(ADRESH, 0, 255, 5, 17);
+                ADC_Voltaje3 = map(ADRESH, 0, 255, 5, 17); //Map de POT3
                 __delay_us(100);
                 
                 //Lectura Canal AN3
@@ -193,7 +195,7 @@ void main(void) {
                 while (ADCON0bits.GO == 1){
                     ;
                 }
-                ADC_Voltaje4 = map(ADRESH, 0, 255, 5, 17);
+                ADC_Voltaje4 = map(ADRESH, 0, 255, 5, 17); //Map de POT4
                 __delay_us(100);
                
                 break;
@@ -205,8 +207,8 @@ void main(void) {
                 PORTDbits.RD1 = 0; 
                 PORTDbits.RD2 = 0; 
                 
-                CCPR1L = ADC_Voltaje1; 
-                CCPR2L = ADC_Voltaje2; 
+                CCPR1L = ADC_Voltaje1; //Se actualiza pulso PWM1
+                CCPR2L = ADC_Voltaje2; //Se actualiza pulso PWM2
                 
                 break; 
             case(3): //Modo UART (Movimiento controlado por medio de Adafruit)
@@ -216,8 +218,8 @@ void main(void) {
                 PORTDbits.RD1 = 1; 
                 PORTDbits.RD2 = 0;
                 
-                /*
-                print("\r¿Cuál servo desea mover?  \r");
+                /* 
+                print("¿Cuál servo desea mover?");
                 //print("1. Brazo Izquierdo, 2. Brazo Derecho, 3. Pivote, 4. Garra");
                 
                 while(PIR1bits.RCIF == 0){
@@ -225,6 +227,8 @@ void main(void) {
                  }
                 
                 option_selected = RCREG;
+                
+                print("ojo");
                 
                 /*if (option_selected == '1'){
                     print("Seleccione el ángulo de rotación");
@@ -264,34 +268,32 @@ void main(void) {
 //Funciones
 //******************************************************************************
 
-/*void ADC_to_PWM(int voltaje){
-    equivalent = (unsigned short) (7+( (float)(9)/(255) ) * (voltaje-0));
-}*/
-
 void write_EEPROM(uint8_t address, uint8_t data){
-    uint8_t gieStatus;
     while (WR);
     
     EEADR = address;
     EEDAT = data;
-    EECON1bits.EEPGD = 0;
-    EECON1bits.WREN = 1;
-    gieStatus = GIE;
-    INTCONbits.GIE = 0;
+    
+    EECON1bits.EEPGD = 0;        //Selección de acceso a memoria de datos
+    EECON1bits.WREN = 1;         //Habilitamos la escritura
+    
+    INTCONbits.GIE = 0;          //Deshabilitamos interrupciones
+    
     EECON2 = 0x55;
     EECON2 = 0xAA;
-    EECON1bits.WR = 1;
-    EECON1bits. WREN = 0;
     
-    INTCONbits.GIE = gieStatus;
+    EECON1bits.WR = 1;           //Empezamos la escritura de la memoria
+    EECON1bits. WREN = 0;        //Deshabilitamos la escritura
+    
+    INTCONbits.GIE = 1;         //Habilitamos las interrupciones
 }
 
 uint8_t read_EEPROM (uint8_t address){
     while (WR||RD);
     
-    EEADR = address;
-    EECON1bits.EEPGD = 0;
-    EECON1bits.RD = 1;
+    EEADR = address;             //Localidad a leer
+    EECON1bits.EEPGD = 0;        //Selección de acceso a memoria de datos
+    EECON1bits.RD = 1;           //Empezamos la lectura de memoria
     return EEDAT;
 }
 
@@ -303,11 +305,11 @@ void setup(void){
     ANSELH = 0; 
 
             //76543210
-    TRISA = 0b00001111;            // RA0, RA1, RA2, RA3 como inputs
-    TRISB = 0b00001111;            // RB0, RB1, RB2, RB3, RB4 como inputs
-    TRISC = 0b00000110; 
+    TRISA = 0b00001111;             // RA0, RA1, RA2, RA3 como inputs
+    TRISB = 0b00001111;             // RB0, RB1, RB2, RB3 como inputs
+    TRISC = 0b00000110;             // RC1, RC2 como inputs
     TRISD = 0b00000000; 
-    TRISE = 0b00000100;             //RE2 como input
+    TRISE = 0b00000100;             // RE2 como input
     
     PORTA = 0b00000000; 
     PORTB = 0b00000000; 
@@ -315,24 +317,22 @@ void setup(void){
     PORTD = 0b00000000; 
     PORTE = 0b00000000;
      
-    /*Guía para interrupción del Puerto B
+    /*Guía para interrupción/config. del Puerto B
     IOCBbits.IOCB7 = 1;             // RB7 con Interrupción
     WPUBbits.WPUB7 = 0;             // Pull-up enabled
     INTCONbits.RBIE = 1;            // Se habilitan las interrupciones del Puerto B
     INTCONbits.RBIF = 0;            // Flag del Puerto B en 0
     */
     
-    IOCB = 0b00111111;    // RB con Interrupción
-    OPTION_REGbits.nRBPU = 0;
+    //Configuración del Puerto B 
+    IOCB = 0b00111111;              // Pines de Puerto B con Interrupción
+    OPTION_REGbits.nRBPU = 0;       // Pull-Up/Pull-Down
+    INTCONbits.RBIE = 1;            // Se habilitan las interrupciones del Puerto B
     
     
     //Configuración del Oscilador
     OSCCONbits.IRCF = 0b011;        // 500KHz
     OSCCONbits.SCS = 1;             // Oscilador Interno
-    
-    
-    INTCONbits.RBIE = 1;            // Se habilitan las interrupciones del Puerto B
-
     
     //Configuración de las Interrupciones
     INTCONbits.GIE = 1;             
@@ -434,10 +434,10 @@ void incModo(void){
     }
 }
 
-void delay(unsigned int micro){
-    while (micro > 0){
-        __delay_us(50); //delay de 0.25ms
-        micro--; //decrementar variable
+void delay(unsigned int sec){
+    while (sec > 0){
+        __delay_us(50); 
+        sec--; 
     }
 }
 
@@ -446,8 +446,7 @@ unsigned int map(uint8_t value, int inputmin,
     return ((value - inputmin)*(outmax-outmin)) / ((inputmax-inputmin)+outmin);
 }
 
-void print(unsigned char *palabra){
-    
+void print(unsigned char *palabra){   
     while (*palabra != '\0'){
         while (TXIF != 1);
         TXREG = *palabra;

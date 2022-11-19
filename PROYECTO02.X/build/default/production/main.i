@@ -2659,12 +2659,7 @@ unsigned int ADC_Voltaje2;
 unsigned int ADC_Voltaje3;
 unsigned int ADC_Voltaje4;
 char option_selected;
-unsigned int address = 0;
-unsigned int serv1;
-unsigned int serv2;
-unsigned int serv3;
-unsigned int serv4;
-
+unsigned int address;
 
 
 
@@ -2674,31 +2669,33 @@ void setupPWM(void);
 void setupADC(void);
 void initUART(void);
 void incModo(void);
-void delay(unsigned int micro);
+void delay(unsigned int sec);
 void print(unsigned char *palabra);
-unsigned int map(uint8_t value, int valorin, int inputmax, int outmin, int outmax);
+unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax);
 uint8_t read_EEPROM(uint8_t address);
 void write_EEPROM(uint8_t address, uint8_t data);
 
 
 
 
-
 void __attribute__((picinterrupt(("")))) isr (void){
-
-
 
     if (PIR1bits.TXIF){
         PIR1bits.TXIF = 0;
     }
 
-    if (PIR1bits.ADIF){
+    if (PIR1bits.RCIF){
+        PIR1bits.RCIF = 0;
+    }
 
+
+    if (PIR1bits.ADIF){
         PIR1bits.ADIF=0;
     }
 
+
     if (INTCONbits.T0IF){
-        INTCONbits.T0IF = 0;
+
         TMR0 = 100;
 
         PORTAbits.RA7 = 1;
@@ -2707,9 +2704,12 @@ void __attribute__((picinterrupt(("")))) isr (void){
         PORTAbits.RA6 = 1;
         delay(ADC_Voltaje4);
         PORTAbits.RA6 = 0;
+
+        INTCONbits.T0IF = 0;
     }
 
-     if (INTCONbits.RBIF){
+
+    if (INTCONbits.RBIF){
         if (PORTBbits.RB0 == 0){
             address = address + 4;
         }
@@ -2718,26 +2718,27 @@ void __attribute__((picinterrupt(("")))) isr (void){
             address = address - 4;
 
         else if (PORTBbits.RB2 == 0){
+
+
             write_EEPROM(address, ADC_Voltaje1);
             write_EEPROM(address + 1, ADC_Voltaje2);
             write_EEPROM(address + 2, ADC_Voltaje3);
             write_EEPROM(address + 3, ADC_Voltaje4);
         }
 
-        else if (modo == 2){
-            if (PORTBbits.RB3 == 0){
+        else if (PORTBbits.RB3 == 0){
+            if (modo == 2){
+
                 ADC_Voltaje1 = read_EEPROM(address);
                 ADC_Voltaje2 = read_EEPROM(address+1);
                 ADC_Voltaje3 = read_EEPROM(address+2);
                 ADC_Voltaje4 = read_EEPROM(address+3);
             }
-            else if (PORTBbits.RB0 == 0){
-                address = address + 4;
+            else {
+                ;
             }
-
-            else if (PORTBbits.RB1 == 0)
-                address = address - 4;
         }
+
         INTCONbits.RBIF = 0;
     }
 }
@@ -2751,6 +2752,7 @@ void main(void) {
     setupPWM();
     initUART();
     modo = 1;
+    address = 0;
 
 
     while(1){
@@ -2833,29 +2835,35 @@ void main(void) {
                 PORTDbits.RD0 = 0;
                 PORTDbits.RD1 = 1;
                 PORTDbits.RD2 = 0;
-# 257 "main.c"
+# 261 "main.c"
                 break;
         }
 
     }
 }
-# 271 "main.c"
+
+
+
+
+
 void write_EEPROM(uint8_t address, uint8_t data){
-    uint8_t gieStatus;
     while (WR);
 
     EEADR = address;
     EEDAT = data;
+
     EECON1bits.EEPGD = 0;
     EECON1bits.WREN = 1;
-    gieStatus = GIE;
+
     INTCONbits.GIE = 0;
+
     EECON2 = 0x55;
     EECON2 = 0xAA;
+
     EECON1bits.WR = 1;
     EECON1bits. WREN = 0;
 
-    INTCONbits.GIE = gieStatus;
+    INTCONbits.GIE = 1;
 }
 
 uint8_t read_EEPROM (uint8_t address){
@@ -2886,18 +2894,15 @@ void setup(void){
     PORTC = 0b00000000;
     PORTD = 0b00000000;
     PORTE = 0b00000000;
-# 325 "main.c"
+# 328 "main.c"
     IOCB = 0b00111111;
     OPTION_REGbits.nRBPU = 0;
+    INTCONbits.RBIE = 1;
 
 
 
     OSCCONbits.IRCF = 0b011;
     OSCCONbits.SCS = 1;
-
-
-    INTCONbits.RBIE = 1;
-
 
 
     INTCONbits.GIE = 1;
@@ -2999,10 +3004,10 @@ void incModo(void){
     }
 }
 
-void delay(unsigned int micro){
-    while (micro > 0){
+void delay(unsigned int sec){
+    while (sec > 0){
         _delay((unsigned long)((50)*(500000/4000000.0)));
-        micro--;
+        sec--;
     }
 }
 
@@ -3012,7 +3017,6 @@ unsigned int map(uint8_t value, int inputmin,
 }
 
 void print(unsigned char *palabra){
-
     while (*palabra != '\0'){
         while (TXIF != 1);
         TXREG = *palabra;
